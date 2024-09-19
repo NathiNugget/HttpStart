@@ -7,7 +7,10 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
-using System.Drawing; 
+using System.Drawing;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
+using System.Collections;
 
 namespace HttpStart
 {
@@ -28,11 +31,10 @@ namespace HttpStart
             {
                 // venter på en klient 
                 TcpClient socket = server.AcceptTcpClient();
-                Task newThread = Task.Run(() =>
+                Task.Run(() =>
                 {
                     DoOneClient(socket);
                 });
-
             }
 
         }
@@ -117,165 +119,168 @@ namespace HttpStart
                         if (l.Contains("GET"))
                         {
                             string URI = line[1].Replace("/", "\\");
-                            sw.WriteLine($"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
-                            sw.Flush();
-                            Console.WriteLine(RootCatalog + URI);
-
-                            if (File.Exists(RootCatalog + URI))
+                            int imageLen = 0;
+                            string _tofind = RootCatalog + URI;
+                            using (FileStream fs = File.OpenRead(_tofind))
                             {
-                                byte[] byteArr = File.ReadAllBytes(RootCatalog + URI); 
-                                
-                                MemoryStream ms = new MemoryStream();
-                                ms.Write(byteArr); 
-                                using (FileStream fs = File.OpenRead(RootCatalog + URI))
+                                imageLen = (int)fs.Length;
+                            }
+                            StringBuilder sb = new StringBuilder();
+                            sw.Write($"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n");
+
+
+
+                            Console.WriteLine(_tofind);
+
+                            if (File.Exists(_tofind))
+                            {
+
+                                using (StreamReader streamReader = new StreamReader(_tofind))
                                 {
-                                    
+                                    while (!streamReader.EndOfStream)
+                                    {
 
-                                    //StreamReader streamReader = new StreamReader(fs);
+                                        sw.WriteLine(streamReader.ReadLine());
 
-                                    //while (!streamReader.EndOfStream)
-                                    //{
-
-                                    //    sw.WriteLine(streamReader.ReadLine());
-                                    //    sw.Flush();
-                                    //}
-
+                                    }
+                                    sw.Flush();
                                 }
                                 
-                                Console.WriteLine(ms);
-                                sw.Write(ms);
-                                sw.Flush(); 
+
+                                
+
+
+
                             }
+                            string navn = line[1];
+                            if (line.Length > 3)
+                            {
+                                string addresse = line[2];
+                                string mobil = line[3];
+                                if (l.ToUpper().Contains("CREATE"))
+                                {
+                                    AddPerson(navn, addresse, mobil, sw);
+                                }
+
+                                else if (l.ToUpper().Contains("UPDATE"))
+                                {
+                                    navn = line[1];
+                                    string nnavn = line[2];
+                                    string naddresse = line[3];
+                                    string nmobil = line[4];
+                                    UpdatePerson(navn, nnavn, naddresse, nmobil, sw);
+                                }
+
+                            }
+
+
+
+                            else if (l.ToUpper().Contains("DELETE")) DeletePerson(navn, sw);
                         }
-                        string navn = line[1];
-                        if (line.Length > 3)
+                        else if (l.ToUpper().Contains("READ"))
                         {
-                            string addresse = line[2];
-                            string mobil = line[3];
-                            if (l.ToUpper().Contains("CREATE"))
-                            {
-                                AddPerson(navn, addresse, mobil, sw);
-                            }
-
-                            else if (l.ToUpper().Contains("UPDATE"))
-                            {
-                                navn = line[1];
-                                string nnavn = line[2];
-                                string naddresse = line[3];
-                                string nmobil = line[4];
-                                UpdatePerson(navn, nnavn, naddresse, nmobil, sw);
-                            }
-
+                            ReadList(sw);
                         }
-
-
-
-                        else if (l.ToUpper().Contains("DELETE")) DeletePerson(navn, sw);
+                        else if (l.ToUpper().Contains("EXIT") || l.ToUpper().Contains("STOP"))
+                        {
+                            sw.WriteLine("You have been disconnected from the server");
+                            sw.Flush();
+                            socket.Close();
+                            break;
+                        }
+                        sw.Flush();
+                        socket.Close();
                     }
-                    else if (l.ToUpper().Contains("READ"))
+                    else
                     {
-                        ReadList(sw);
-                    }
-                    else if (l.ToUpper().Contains("EXIT") || l.ToUpper().Contains("STOP"))
-                    {
-                        sw.WriteLine("You have been disconnected from the server");
                         sw.Flush();
                         socket.Close();
                         break;
+
+
                     }
-                    sw.Flush();
-                    socket.Close();
+
+
+
+
+
+
                 }
-                else
+
+
+
+
+
+                }
+
+                Console.WriteLine("Client disconnected");
+            }
+
+            private void PrintOnEachLine(StreamWriter sw, string l)
+            {
+                foreach (string s in l.Split(' '))
                 {
-                    sw.Flush();
-                    socket.Close();
-                    break;
-
-
+                    sw.WriteLine(s);
                 }
-
-
-
-
-
-
-
-
-
-
-
-
             }
 
-            Console.WriteLine("Client disconnected");
-        }
-
-        private void PrintOnEachLine(StreamWriter sw, string l)
-        {
-            foreach (string s in l.Split(' '))
+            private void DeletePerson(string navn, StreamWriter sw)
             {
-                sw.WriteLine(s);
-            }
-        }
-
-        private void DeletePerson(string navn, StreamWriter sw)
-        {
-            Person? person = _personList.Find(p => p.Navn.Equals(navn));
-            if (person != null)
-            {
-                _personList.Remove(person);
-                sw.WriteLine($"Person slettet: {person}");
-            }
-            else sw.WriteLine("Noget gik galt :(");
-
-        }
-
-        private void AddPerson(string navn, string addresse, string mobil, StreamWriter sw)
-        {
-            if (navn != null && addresse != null && mobil != null)
-            {
-                Person p = new Person(navn, addresse, mobil);
-                _personList.Add(p);
-                sw.WriteLine($"Person tilføjet: {p}");
-            }
-            else sw.WriteLine($"Noget gik galt :(");
-        }
-
-        private void UpdatePerson(string navn, string nnavn, string naddresse, string nmobil, StreamWriter sw)
-        {
-            if (navn != null && nnavn != null && naddresse != null && nmobil != null)
-            {
-                Person p = _personList.Find(p => p.Navn.Equals(navn))!;
-                if (p != null)
+                Person? person = _personList.Find(p => p.Navn.Equals(navn));
+                if (person != null)
                 {
-                    int idx = _personList.IndexOf(p);
-                    p.Addresse = naddresse;
-                    p.Navn = nnavn;
-                    p.Mobil = nmobil;
-                    _personList[idx] = p;
-                    sw.WriteLine($"Person opdateret: {navn}");
+                    _personList.Remove(person);
+                    sw.WriteLine($"Person slettet: {person}");
                 }
-            }
-            else sw.WriteLine("Noget gik galt :(");
-        }
+                else sw.WriteLine("Noget gik galt :(");
 
-        private void ReadList(StreamWriter sw)
-        {
-            lock (_personList)
+            }
+
+            private void AddPerson(string navn, string addresse, string mobil, StreamWriter sw)
             {
-                foreach (Person p in _personList)
+                if (navn != null && addresse != null && mobil != null)
                 {
-
-                    sw.WriteLine(p);
-                    sw.Flush();
+                    Person p = new Person(navn, addresse, mobil);
+                    _personList.Add(p);
+                    sw.WriteLine($"Person tilføjet: {p}");
                 }
+                else sw.WriteLine($"Noget gik galt :(");
+            }
+
+            private void UpdatePerson(string navn, string nnavn, string naddresse, string nmobil, StreamWriter sw)
+            {
+                if (navn != null && nnavn != null && naddresse != null && nmobil != null)
+                {
+                    Person p = _personList.Find(p => p.Navn.Equals(navn))!;
+                    if (p != null)
+                    {
+                        int idx = _personList.IndexOf(p);
+                        p.Addresse = naddresse;
+                        p.Navn = nnavn;
+                        p.Mobil = nmobil;
+                        _personList[idx] = p;
+                        sw.WriteLine($"Person opdateret: {navn}");
+                    }
+                }
+                else sw.WriteLine("Noget gik galt :(");
+            }
+
+            private void ReadList(StreamWriter sw)
+            {
+                lock (_personList)
+                {
+                    foreach (Person p in _personList)
+                    {
+
+                        sw.WriteLine(p);
+                        sw.Flush();
+                    }
+                }
+
+
             }
 
 
+
         }
-
-
-
     }
-}
